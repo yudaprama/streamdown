@@ -21,17 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Generate GitHub App Token
-        id: generate-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.STREAMDOWN_APP_ID }}
-          private-key: ${{ secrets.STREAMDOWN_APP_PRIVATE_KEY }}
-      
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ steps.generate-token.outputs.token }}
       
       - uses: actions/setup-node@v4
         with:
@@ -50,5 +42,4 @@ jobs:
         run: |
           node index.js
         env:
-          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
           CHANGED_FILES: ${{ steps.changeset-files.outputs.changed-files }}
