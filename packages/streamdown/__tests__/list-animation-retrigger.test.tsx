@@ -1,176 +1,155 @@
 /**
- * Tests for fix #410: Ordered list animations incorrectly retrigger
+ * Regression guard for #410: ordered/unordered list animations re-triggering.
  *
- * Root cause: when streaming content contains multiple ordered/unordered lists,
- * the Marked lexer merges them into a single block. As new items appear the block
- * is re-processed through the rehype pipeline, recreating `data-sd-animate` spans
- * for ALL text — including already-visible content — causing those characters to
- * re-run their CSS entry animation.
+ * Multiple lists are merged by the Marked lexer into a single block. As items
+ * stream in, that block is re-parsed through the rehype pipeline. Under the
+ * three-zone animation model this no longer re-animates already-visible content:
  *
- * Fix: two layers of protection:
- * 1. Memo'd list components (MemoLi, MemoUl, etc.) prevent re-rendering when
- *    the node position hasn't changed — existing spans stay in the DOM.
- * 2. When the node position DOES change (e.g., during streaming as text grows),
- *    the animate plugin tracks prevContentLength and sets --sd-duration:0ms for
- *    text-node positions that were already rendered in the previous pass.
+ * 1. Each animated segment carries a stable `data-sd-key` derived from its source
+ *    offset, so React reconciles existing spans in place instead of remounting
+ *    them when the block re-parses.
+ * 2. Already-revealed words sit in the settled zone (`data-sd-shown`), so they are
+ *    never re-flagged as active (`data-sd-animate`) and never re-run the fade.
  */
 
 import { act, render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Streamdown } from "../index";
 
-const animatedConfig = {
+const animated = {
   animation: "fadeIn" as const,
-  duration: 700,
-  easing: "ease-in-out",
-  sep: "char" as const,
+  duration: 150,
+  easing: "ease",
+  sep: "word" as const,
 };
 
-describe("list animation retrigger fix (#410)", () => {
-  it("does not remount spans for existing list items when a new item appears", async () => {
-    const { rerender, container } = render(
-      <Streamdown animated={animatedConfig} isAnimating={true}>
-        {"1. Item 1\n2. Item 2\n"}
+let clock = 0;
+
+beforeEach(() => {
+  clock = 0;
+  vi.useFakeTimers();
+  vi.stubGlobal("performance", { now: () => clock });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+// Advance well past any stagger/duration so the controller drains to settled.
+const drain = () => {
+  for (let i = 0; i < 50; i += 1) {
+    act(() => {
+      clock += 200;
+      vi.advanceTimersByTime(200);
+    });
+  }
+};
+
+const wordSpan = (container: HTMLElement, word: string): HTMLElement | null =>
+  Array.from(container.querySelectorAll("span")).find(
+    (s) => s.childElementCount === 0 && s.textContent === word
+  ) ?? null;
+
+describe("list animation retrigger (#410)", () => {
+  it("does not remount existing list-item spans when a new item appears", () => {
+    const { container, rerender } = render(
+      <Streamdown animated={animated} isAnimating mode="streaming">
+        {"- Alpha\n- Bravo\n"}
       </Streamdown>
     );
-    await act(() => Promise.resolve());
+    drain();
 
-    const initialSpans = Array.from(
-      container.querySelectorAll("[data-sd-animate]")
-    );
-    expect(initialSpans.length).toBeGreaterThan(0);
+    const alpha = wordSpan(container, "Alpha");
+    const bravo = wordSpan(container, "Bravo");
+    expect(alpha, "expected an 'Alpha' word span").not.toBeNull();
+    expect(bravo, "expected a 'Bravo' word span").not.toBeNull();
 
-    // Tag spans so we can track identity across re-renders
-    initialSpans.forEach((span, i) => {
-      (span as HTMLElement).dataset.origIdx = String(i);
-    });
-
-    // Simulate a new list group appearing (triggers tight→loose transition)
-    await act(() => {
+    // A new list item appears mid-stream (the merged block re-parses).
+    act(() => {
       rerender(
-        <Streamdown animated={animatedConfig} isAnimating={true}>
-          {"1. Item 1\n2. Item 2\n\n1. Item A\n"}
+        <Streamdown animated={animated} isAnimating mode="streaming">
+          {"- Alpha\n- Bravo\n- Charlie\n"}
         </Streamdown>
       );
     });
-    await act(() => Promise.resolve());
+    drain();
 
-    const afterSpans = Array.from(
-      container.querySelectorAll("[data-sd-animate]")
-    );
-
-    // There should be MORE spans after (new item appeared)
-    expect(afterSpans.length).toBeGreaterThan(initialSpans.length);
-
-    // All original spans should still be in the document (not remounted)
-    const remountedCount = initialSpans.filter(
-      (s) => !container.contains(s)
-    ).length;
-    expect(remountedCount).toBe(0);
+    // Stable keys reconcile the existing words in place — same DOM nodes.
+    expect(alpha?.isConnected, "'Alpha' span remounted").toBe(true);
+    expect(bravo?.isConnected, "'Bravo' span remounted").toBe(true);
+    expect(wordSpan(container, "Charlie"), "new item missing").not.toBeNull();
   });
 
-  it("sets --sd-duration:0ms on already-rendered content when item text grows", async () => {
-    // When a list item's text grows during streaming, its node position
-    // changes (end column extends). This causes the memo'd MemoLi to
-    // re-render, and the animate plugin applies 0ms to already-visible chars.
-    const { rerender, container } = render(
-      <Streamdown animated={animatedConfig} isAnimating={true}>
-        {"- AB\n"}
+  it("does not re-animate already-settled words when an item's text grows", () => {
+    const { container, rerender } = render(
+      <Streamdown animated={animated} isAnimating mode="streaming">
+        {"- Alpha\n"}
       </Streamdown>
     );
-    await act(() => Promise.resolve());
+    drain();
 
-    // First render: "AB" → 2 animated chars (A, B), both 700ms
-    const firstRenderSpans = Array.from(
-      container.querySelectorAll("[data-sd-animate]")
-    ) as HTMLElement[];
-    expect(firstRenderSpans.length).toBe(2);
-    for (const span of firstRenderSpans) {
-      const duration = span.style.getPropertyValue("--sd-duration");
-      expect(duration).toBe("700ms");
-    }
+    const alpha = wordSpan(container, "Alpha");
+    expect(alpha?.hasAttribute("data-sd-shown"), "'Alpha' not settled").toBe(
+      true
+    );
 
-    // Streaming update: item text grows from "AB" to "AB CD"
-    // This changes the li node position → MemoLi re-renders
-    await act(() => {
+    // The item's text grows during streaming (its node position extends).
+    act(() => {
       rerender(
-        <Streamdown animated={animatedConfig} isAnimating={true}>
-          {"- AB CD\n"}
+        <Streamdown animated={animated} isAnimating mode="streaming">
+          {"- Alpha Bravo\n"}
         </Streamdown>
       );
     });
-    await act(() => Promise.resolve());
 
-    const afterSpans = Array.from(
-      container.querySelectorAll("[data-sd-animate]")
-    ) as HTMLElement[];
+    // 'Alpha' stays the same settled node — not remounted, not re-animated.
+    expect(alpha?.isConnected, "'Alpha' span remounted on growth").toBe(true);
+    expect(
+      alpha?.hasAttribute("data-sd-shown"),
+      "settled 'Alpha' lost its shown state"
+    ).toBe(true);
+    expect(
+      alpha?.hasAttribute("data-sd-animate"),
+      "settled 'Alpha' was re-flagged for animation"
+    ).toBe(false);
 
-    // Should have 4 animated chars: A, B (old), C, D (new)
-    expect(afterSpans.length).toBe(4);
-
-    // "A" and "B" (chars 0-1) should have duration:0ms — already visible
-    for (const span of afterSpans.slice(0, 2)) {
-      const duration = span.style.getPropertyValue("--sd-duration");
-      expect(duration).toBe("0ms");
-    }
-
-    // "C" and "D" (chars 2-3) should have normal duration
-    for (const span of afterSpans.slice(2)) {
-      const duration = span.style.getPropertyValue("--sd-duration");
-      expect(duration).toBe("700ms");
-    }
+    // The newly-arrived word still animates in and settles.
+    drain();
+    expect(wordSpan(container, "Bravo"), "new word missing").not.toBeNull();
   });
 
-  it("keeps animatePlugin stable when animated is a new inline object with same values", async () => {
-    // This tests the value-based useMemo deps fix.
-    // When animated is an inline object literal, each parent render creates
-    // a new reference. The fix ensures the plugin instance stays stable
-    // so that prevContentLength mutations affect the correct processor closure.
+  it("keeps content stable when `animated` is a fresh object of equal values", () => {
+    // Inline object literals create a new reference each render; the value-keyed
+    // memo must keep the controller/plugin stable so prior content is not torn
+    // down and re-animated.
     const getAnimated = () => ({
       animation: "fadeIn" as const,
-      duration: 700,
-      easing: "ease-in-out",
-      sep: "char" as const,
+      duration: 150,
+      easing: "ease",
+      sep: "word" as const,
     });
 
-    const { rerender, container } = render(
-      <Streamdown animated={getAnimated()} isAnimating={true}>
-        {"- Alpha\n- Beta\n"}
+    const { container, rerender } = render(
+      <Streamdown animated={getAnimated()} isAnimating mode="streaming">
+        {"- Alpha\n- Bravo\n"}
       </Streamdown>
     );
-    await act(() => Promise.resolve());
+    drain();
 
-    // Tag initial spans
-    const initialSpans = Array.from(
-      container.querySelectorAll("[data-sd-animate]")
-    );
-    initialSpans.forEach((span, i) => {
-      (span as HTMLElement).dataset.origIdx = String(i);
-    });
+    const alpha = wordSpan(container, "Alpha");
+    expect(alpha, "expected an 'Alpha' word span").not.toBeNull();
 
-    // Re-render with new object reference for animated (same values)
-    // and new content — simulates a streaming update from a parent that
-    // re-creates the animated object literal on each render
-    await act(() => {
+    act(() => {
       rerender(
-        <Streamdown animated={getAnimated()} isAnimating={true}>
-          {"- Alpha\n- Beta\n- Gamma\n"}
+        <Streamdown animated={getAnimated()} isAnimating mode="streaming">
+          {"- Alpha\n- Bravo\n- Charlie\n"}
         </Streamdown>
       );
     });
-    await act(() => Promise.resolve());
+    drain();
 
-    const afterSpans = Array.from(
-      container.querySelectorAll("[data-sd-animate]")
-    );
-
-    // Original spans should still be in the document
-    const remountedCount = initialSpans.filter(
-      (s) => !container.contains(s)
-    ).length;
-    expect(remountedCount).toBe(0);
-
-    // New spans for "Gamma" should exist
-    expect(afterSpans.length).toBeGreaterThan(initialSpans.length);
+    expect(alpha?.isConnected, "'Alpha' span remounted").toBe(true);
+    expect(wordSpan(container, "Charlie"), "new item missing").not.toBeNull();
   });
 });

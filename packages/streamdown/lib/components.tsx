@@ -49,7 +49,11 @@ interface MarkdownPosition {
 }
 interface MarkdownNode {
   position?: MarkdownPosition;
-  properties?: { className?: string; metastring?: string };
+  properties?: {
+    className?: string;
+    metastring?: string;
+    "data-sd-animating"?: boolean;
+  };
 }
 
 type WithNode<T> = T & {
@@ -58,7 +62,19 @@ type WithNode<T> = T & {
   className?: string;
 };
 
+// Source position is the streaming change signal: when an element's parsed
+// extent is unchanged its content hasn't changed, so the memo skips re-render.
+// The streaming animation breaks that assumption — the frontier advances (child
+// spans flip active->shown) with the source position fixed — so a node carrying
+// the `data-sd-animating` marker must keep re-rendering until its subtree fully
+// settles and the marker drops.
 function sameNodePosition(prev?: MarkdownNode, next?: MarkdownNode): boolean {
+  if (
+    prev?.properties?.["data-sd-animating"] ||
+    next?.properties?.["data-sd-animating"]
+  ) {
+    return false;
+  }
   if (!(prev?.position || next?.position)) {
     return true;
   }

@@ -1,35 +1,91 @@
+/* Reveal model: a segment occupies no layout space through its stagger delay,
+   then animates in. The 0%/1% split flips visibility on at animation start while
+   keeping it hidden during the backwards-filled delay window.
+
+   `--sd-hidden-display` controls HOW an unrevealed segment is hidden:
+   - `none` (default): the segment is removed from layout (display:none), so
+     content grows in as it reveals — the smoothest reveal, but layout shifts.
+   - `revert` (set by `animated={{ reserveSpace: true }}`): the segment keeps its
+     box and only fades opacity, so the final layout is reserved up front and
+     never shifts. */
 @keyframes sd-fadeIn {
-  from {
+  0% {
+    display: var(--sd-hidden-display, none);
     opacity: 0;
   }
-  to {
+  1% {
+    display: revert;
+    opacity: 0;
+  }
+  100% {
+    display: revert;
     opacity: 1;
   }
 }
 
 @keyframes sd-blurIn {
-  from {
+  0% {
+    display: var(--sd-hidden-display, none);
     opacity: 0;
     filter: blur(4px);
   }
-  to {
+  1% {
+    display: revert;
+    opacity: 0;
+    filter: blur(4px);
+  }
+  100% {
+    display: revert;
     opacity: 1;
     filter: blur(0);
   }
 }
 
 @keyframes sd-slideUp {
-  from {
+  0% {
+    display: var(--sd-hidden-display, none);
     opacity: 0;
     transform: translateY(4px);
   }
-  to {
+  1% {
+    display: revert;
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    display: revert;
     opacity: 1;
     transform: translateY(0);
   }
 }
 
+/* Parent cascade: a container reveals (display only, no fade) when its
+   earliest descendant segment does, so containers whose children are all
+   still hidden take up no space (in the default collapse mode). */
+@keyframes sd-appear {
+  0% {
+    display: var(--sd-hidden-display, none);
+  }
+  1% {
+    display: revert;
+  }
+  100% {
+    display: revert;
+  }
+}
+
 [data-sd-animate] {
   animation: var(--sd-animation, sd-fadeIn) var(--sd-duration, 150ms)
-    var(--sd-easing, ease) var(--sd-delay, 0ms) both;
+    var(--sd-easing, ease) var(--sd-delay, 0ms) backwards;
+}
+
+[data-sd-appear] {
+  animation: sd-appear 1ms step-end var(--sd-delay, 0ms) backwards;
+}
+
+/* Pending segments wait their turn. `display:none` collapses them; in
+   reserve-space mode they keep their box and stay invisible via opacity. */
+[data-sd-hidden] {
+  display: var(--sd-hidden-display, none);
+  opacity: 0;
 }

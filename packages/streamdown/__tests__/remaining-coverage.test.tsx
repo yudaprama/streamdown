@@ -1,10 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react";
-import rehypeParse from "rehype-parse";
-import rehypeStringify from "rehype-stringify";
-import { unified } from "unified";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StreamdownContext } from "../index";
-import { createAnimatePlugin } from "../lib/animate";
 import { CodeBlock } from "../lib/code-block";
 import { CodeBlockCopyButton } from "../lib/code-block/copy-button";
 import { HighlightedCodeBlockBody } from "../lib/code-block/highlighted-body";
@@ -123,38 +119,6 @@ describe("HighlightedCodeBlockBody cachedResult path", () => {
     const body = container.querySelector('[data-streamdown="code-block-body"]');
     expect(body).toBeTruthy();
     expect(body?.textContent).toContain("cached");
-  });
-});
-
-describe("animate.ts remaining coverage", () => {
-  const processHtml = async (html: string, plugin = createAnimatePlugin()) => {
-    const processor = unified()
-      .use(rehypeParse, { fragment: true })
-      .use(plugin.rehypePlugin)
-      .use(rehypeStringify);
-    return String(await processor.process(html));
-  };
-
-  it("should handle char splitting with trailing whitespace", async () => {
-    const plugin = createAnimatePlugin({ sep: "char" });
-    const result = await processHtml("<p>A B </p>", plugin);
-    // "A", " ", "B", " " should be the parts
-    expect(result).toContain(">A<");
-    expect(result).toContain(">B<");
-  });
-
-  it("should skip text inside math elements", async () => {
-    const result = await processHtml(
-      "<math><annotation>x^2</annotation></math>"
-    );
-    expect(result).not.toContain("data-sd-animate");
-  });
-
-  it("should handle node not found in parent (index === -1)", async () => {
-    // This is an edge case that's hard to trigger naturally
-    // Just ensure the plugin doesn't crash on complex nested content
-    const result = await processHtml("<div><p>Hello</p><p>World</p></div>");
-    expect(result).toContain("data-sd-animate");
   });
 });
 

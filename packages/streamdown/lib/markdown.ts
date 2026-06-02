@@ -1,5 +1,5 @@
 import type { Element, Nodes, Parents, Root } from "hast";
-import { toJsxRuntime } from "hast-util-to-jsx-runtime";
+import { type Jsx, toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { urlAttributes } from "html-url-attributes";
 import type { ComponentType, JSX, ReactElement } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
@@ -191,6 +191,18 @@ export const Markdown = (options: Readonly<Options>) => {
   return post(tree, options);
 };
 
+/**
+ * Run the same remark/rehype pipeline as `Markdown` but return the resolved
+ * HAST instead of React output. Used by the streaming animation to count a
+ * block's segments with a tree identical to what gets rendered. Shares the
+ * processor cache, so passing the same options is cheap.
+ */
+export const buildHast = (options: Readonly<Options>): Root => {
+  const processor = getCachedProcessor(options);
+  const content = options.children || "";
+  return processor.runSync(processor.parse(content), content) as Root;
+};
+
 const getCachedProcessor = (options: Readonly<Options>) => {
   // Try to get from cache first
   const cached = processorCache.get(options);
@@ -286,6 +298,31 @@ const shouldRemoveElement = (
   return remove;
 };
 
+// The animation transform stamps a `data-sd-key` sentinel on the nodes it wraps
+// so React reconciles them by a stable per-segment key instead of the positional
+// `tagName-count` keys hast-util assigns. Promote that sentinel to the React
+// key and strip it (and the `data-sd-animating` re-render hint, read off the
+// hast node by the component memo comparators — never needed on the DOM) from
+// props so neither reaches the DOM. Nodes without the sentinel are forwarded
+// untouched, leaving normal markdown unaffected.
+const promoteAnimationKey =
+  (fn: Jsx): Jsx =>
+  (type, props, key) => {
+    const sentinel = props["data-sd-key"];
+    if (sentinel === undefined) {
+      return fn(type, props, key);
+    }
+    const {
+      "data-sd-key": _key,
+      "data-sd-animating": _animating,
+      ...rest
+    } = props;
+    return fn(type, rest, String(sentinel));
+  };
+
+const jsxWithAnimationKey = promoteAnimationKey(jsx);
+const jsxsWithAnimationKey = promoteAnimationKey(jsxs);
+
 const post = (tree: Nodes, options: Readonly<Options>): ReactElement => {
   const {
     allowElement,
@@ -342,8 +379,8 @@ const post = (tree: Nodes, options: Readonly<Options>): ReactElement => {
     Fragment,
     components: options.components,
     ignoreInvalidStyle: true,
-    jsx,
-    jsxs,
+    jsx: jsxWithAnimationKey,
+    jsxs: jsxsWithAnimationKey,
     passKeys: true,
     passNode: true,
   });

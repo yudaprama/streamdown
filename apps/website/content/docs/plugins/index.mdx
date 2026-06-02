@@ -137,4 +137,4 @@ The plugins are optimized for performance:
 - Shiki languages are lazy-loaded only when needed
 - Token results are cached to avoid re-highlighting
 - KaTeX CSS is only loaded when math syntax is used
-- Animation is excluded from the pipeline when `isAnimating` is `false`
+- Animation segment counts are cached per block, so settled blocks aren't re-parsed each streaming tick

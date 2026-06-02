@@ -6,6 +6,7 @@ const INDENTED_DIV_REGEX = /^ {4,}<div>/m;
 
 // Mock the dependencies
 vi.mock("../lib/markdown", () => ({
+  buildHast: () => ({ type: "root", children: [] }),
   Markdown: ({ children, ...props }: any) => {
     if (!children) {
       return null;
