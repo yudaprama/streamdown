@@ -281,4 +281,90 @@ describe("animate plugin", () => {
       expect(delays).toEqual([]);
     });
   });
+
+  describe("link whitespace behavior", () => {
+    it("should attach whitespace inside links", async () => {
+      const result = await processHtml(
+        '<a href="https://example.com">Hello world</a>'
+      );
+
+      expect(result).toContain(">Hello ");
+      expect(result).toContain(">world<");
+    });
+
+    it("should attach whitespace to the preceding animated word inside links", async () => {
+      const result = await processHtml('<a href="/">Hello world</a>');
+      expect(result).toMatch(
+        /<a href="\/">\s*<span[^>]*>Hello <\/span><span[^>]*>world<\/span><\/a>/
+      );
+    });
+
+    it("should preserve whitespace between spans in normal text", async () => {
+      const result = await processHtml("<p>Hello world</p>");
+
+      expect(result).toMatch(/<\/span>\s+<span/);
+    });
+
+    it("should preserve leading whitespace before the first animated link word", async () => {
+      const result = await processHtml('<a href="/"> Hello world</a>');
+      expect(result).toMatch(
+        /<a href="\/"> <span[^>]*>Hello <\/span><span[^>]*>world<\/span><\/a>/
+      );
+    });
+
+    it("should keep character splitting unchanged inside links", async () => {
+      const plugin = createAnimatePlugin({ sep: "char" });
+      const result = await processHtml('<a href="/">Hi there</a>', plugin);
+      expect(result).toMatch(SPAN_GAP_RE);
+      expect(result).toContain(">H<");
+      expect(result).toContain(">i<");
+      expect(result).toContain(">t<");
+    });
+
+    it("should only modify whitespace inside links in mixed content", async () => {
+      const result = await processHtml(
+        '<p>Hello <a href="#">linked text</a> world</p>'
+      );
+
+      // normal text should still have gaps
+      expect(result).toContain(">Hello<");
+      expect(result).toContain(">world<");
+
+      // link should have merged whitespace
+      expect(result).toContain(">linked ");
+    });
+
+    it("should handle multiple links independently", async () => {
+      const result = await processHtml(
+        '<p><a href="#">first link</a> and <a href="#">second link</a></p>'
+      );
+
+      const linkMatches = (result.match(/data-sd-animate/g) || []).length;
+
+      expect(linkMatches).toBeGreaterThan(2);
+      expect(result).toContain(">first ");
+      expect(result).toContain(">second ");
+    });
+
+    it("should handle nested formatting inside links", async () => {
+      const result = await processHtml(
+        '<a href="#"><strong>Hello world</strong></a>'
+      );
+
+      expect(result).toContain(">Hello ");
+      expect(result).toContain(">world<");
+    });
+
+    it("should handle single-word links", async () => {
+      const result = await processHtml('<a href="#">Hello</a>');
+
+      expect(result).toContain(">Hello<");
+    });
+
+    it("should not affect skip tags like code", async () => {
+      const result = await processHtml("<code>Hello world</code>");
+
+      expect(result).not.toContain("data-sd-animate");
+    });
+  });
 });
