@@ -31,6 +31,14 @@ describe("line numbers", () => {
       );
     });
 
+    it("applies block display class to spans when lineNumbers={false}", () => {
+      const { container } = render(
+        <CodeBlockBody language="js" lineNumbers={false} result={baseResult} />
+      );
+      const span = container.querySelector("code span");
+      expect(span?.className).toContain("block");
+    });
+
     it("applies counter CSS classes to <code> when lineNumbers={true}", () => {
       const { container } = render(
         <CodeBlockBody language="js" lineNumbers={true} result={baseResult} />

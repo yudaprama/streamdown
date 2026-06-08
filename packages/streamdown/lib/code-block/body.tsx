@@ -11,6 +11,9 @@ type CodeBlockBodyProps = ComponentProps<"div"> & {
   lineNumbers?: boolean;
 };
 
+// Base line class string for all line spans (ensures block display)
+const LINE_CLASSES_BASE = baseCn("block");
+
 // Base line numbers class string (merged without prefix for memoization)
 const LINE_NUMBER_CLASSES_BASE = baseCn(
   "block",
@@ -57,6 +60,8 @@ export const CodeBlockBody = memo(
   }: CodeBlockBodyProps) => {
     const cn = useCn();
 
+    // Prefix the pre-computed base line classes (block display for all spans)
+    const lineClasses = useMemo(() => cn(LINE_CLASSES_BASE), [cn]);
     // Prefix the pre-computed line number classes
     const lineNumberClasses = useMemo(() => cn(LINE_NUMBER_CLASSES_BASE), [cn]);
 
@@ -113,7 +118,7 @@ export const CodeBlockBody = memo(
           >
             {result.tokens.map((row, index) => (
               <span
-                className={lineNumbers ? lineNumberClasses : undefined}
+                className={lineNumbers ? lineNumberClasses : lineClasses}
                 // biome-ignore lint/suspicious/noArrayIndexKey: "This is a stable key."
                 key={index}
               >
