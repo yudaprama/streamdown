@@ -6,6 +6,11 @@ import { animate, createAnimatePlugin } from "../lib/animate";
 
 const SPAN_GAP_RE = /<\/span>\s+<span/;
 const CODE_CONTENT_RE = /<code>([^<]*)<\/code>/;
+const LINK_PATTERN_RE =
+  /<a href="\/">\s*<span[^>]*>Hello <\/span><span[^>]*>world<\/span><\/a>/;
+
+const LINK_PATTERN_LEADING_SPACE_RE =
+  /<a href="\/"> <span[^>]*>Hello <\/span><span[^>]*>world<\/span><\/a>/;
 
 const processHtml = async (html: string, plugin = animate) => {
   const processor = unified()
@@ -294,22 +299,18 @@ describe("animate plugin", () => {
 
     it("should attach whitespace to the preceding animated word inside links", async () => {
       const result = await processHtml('<a href="/">Hello world</a>');
-      expect(result).toMatch(
-        /<a href="\/">\s*<span[^>]*>Hello <\/span><span[^>]*>world<\/span><\/a>/
-      );
+      expect(result).toMatch(LINK_PATTERN_RE);
     });
 
     it("should preserve whitespace between spans in normal text", async () => {
       const result = await processHtml("<p>Hello world</p>");
 
-      expect(result).toMatch(/<\/span>\s+<span/);
+      expect(result).toMatch(SPAN_GAP_RE);
     });
 
     it("should preserve leading whitespace before the first animated link word", async () => {
       const result = await processHtml('<a href="/"> Hello world</a>');
-      expect(result).toMatch(
-        /<a href="\/"> <span[^>]*>Hello <\/span><span[^>]*>world<\/span><\/a>/
-      );
+      expect(result).toMatch(LINK_PATTERN_LEADING_SPACE_RE);
     });
 
     it("should keep character splitting unchanged inside links", async () => {
