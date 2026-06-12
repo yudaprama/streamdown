@@ -42,6 +42,7 @@ const LANGUAGE_REGEX = /language-([^\s]+)/;
 interface MarkdownPoint {
   column?: number;
   line?: number;
+  offset?: number;
 }
 interface MarkdownPosition {
   end?: MarkdownPoint;
@@ -74,8 +75,10 @@ function sameNodePosition(prev?: MarkdownNode, next?: MarkdownNode): boolean {
   return (
     prevStart?.line === nextStart?.line &&
     prevStart?.column === nextStart?.column &&
+    prevStart?.offset === nextStart?.offset &&
     prevEnd?.line === nextEnd?.line &&
-    prevEnd?.column === nextEnd?.column
+    prevEnd?.column === nextEnd?.column &&
+    prevEnd?.offset === nextEnd?.offset
   );
 }
 
