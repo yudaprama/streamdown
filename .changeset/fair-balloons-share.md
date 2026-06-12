@@ -2,4 +2,4 @@
 "streamdown": patch
 ---
 
-Compare position.start.offset and position.end.offset in sameNodePosition so mid-block markdown updates aren't skipped by React.memo.
+Fix stale rendering when in-block markdown content changes during streaming updates.
