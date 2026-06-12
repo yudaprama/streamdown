@@ -1,11 +1,11 @@
 import DynamicLink from "fumadocs-core/dynamic-link";
 import type { Metadata } from "next";
-import { Installer } from "@/components/geistdocs/installer";
 import { Button } from "@/components/ui/button";
 import { CenteredSection } from "./components/centered-section";
 import { CTA } from "./components/cta";
 import { Demo } from "./components/demo";
 import { Hero } from "./components/hero";
+import { Installer } from "./components/installer";
 import { Logos } from "./components/logos";
 import { OneTwoSection } from "./components/one-two-section";
 import { Templates } from "./components/templates";
