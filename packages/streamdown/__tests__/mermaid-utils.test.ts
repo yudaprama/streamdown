@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { svgToPngBlob } from "../lib/mermaid/utils";
+import { addXlinkNamespaceIfMissing, svgToPngBlob } from "../lib/mermaid/utils";
 
 const BASE64_SVG_DATA_URL_REGEX = /^data:image\/svg\+xml;base64,/;
+const XLINK_NS_ATTR_RE =
+  /<svg[^>]+xmlns:xlink="http:\/\/www\.w3\.org\/1999\/xlink"/;
+const XLINK_NS_GLOBAL_RE = /xmlns:xlink="http:\/\/www\.w3\.org\/1999\/xlink"/g;
+const SVG_OPEN_ATTR_RE = /<svg[^>]*/;
 
 describe("svgToPngBlob", () => {
   let mockCanvas: any;
@@ -131,5 +135,56 @@ describe("svgToPngBlob", () => {
   it("should encode SVG as base64 data URL", () => {
     svgToPngBlob("<svg><text>Hello</text></svg>");
     expect(mockImage.src).toMatch(BASE64_SVG_DATA_URL_REGEX);
+  });
+
+  it("should inject xmlns:xlink into SVG data URL when xlink: attributes are present", () => {
+    const svgWithXlink =
+      '<svg xmlns="http://www.w3.org/2000/svg"><image xlink:href="data:image/png;base64,abc" /></svg>';
+    svgToPngBlob(svgWithXlink);
+    const decoded = atob(
+      mockImage.src.replace("data:image/svg+xml;base64,", "")
+    );
+    expect(decoded).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+  });
+});
+
+describe("addXlinkNamespaceIfMissing", () => {
+  it("should inject xmlns:xlink when xlink: attributes are present but namespace is missing", () => {
+    const input =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><image xlink:href="data:image/png;base64,abc" /></svg>';
+    const result = addXlinkNamespaceIfMissing(input);
+    expect(result).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+    expect(result).toMatch(XLINK_NS_ATTR_RE);
+  });
+
+  it("should not modify SVG that already declares xmlns:xlink", () => {
+    const input =
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><image xlink:href="data:image/png;base64,abc" /></svg>';
+    expect(addXlinkNamespaceIfMissing(input)).toBe(input);
+  });
+
+  it("should not modify SVG with no xlink: attributes", () => {
+    const input =
+      '<svg xmlns="http://www.w3.org/2000/svg"><circle r="5" /></svg>';
+    expect(addXlinkNamespaceIfMissing(input)).toBe(input);
+  });
+
+  it("should inject namespace onto the root <svg> tag only", () => {
+    const input =
+      '<svg id="root"><g><svg id="nested" xlink:href="x" /></g></svg>';
+    const result = addXlinkNamespaceIfMissing(input);
+    // Only the first <svg> opening tag should get the attribute
+    const firstSvgTag = result.match(SVG_OPEN_ATTR_RE)?.[0] ?? "";
+    expect(firstSvgTag).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+    // Exactly one namespace declaration injected
+    const occurrences = (result.match(XLINK_NS_GLOBAL_RE) ?? []).length;
+    expect(occurrences).toBe(1);
+  });
+
+  it("should handle SVG with xlink:actuate and xlink:title attributes", () => {
+    const input =
+      '<svg xmlns="http://www.w3.org/2000/svg"><a xlink:actuate="onRequest" xlink:title="link" /></svg>';
+    const result = addXlinkNamespaceIfMissing(input);
+    expect(result).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
   });
 });
