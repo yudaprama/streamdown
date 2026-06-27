@@ -263,7 +263,7 @@ export const defaultRehypePlugins: Record<string, Pluggable> = {
 } as const;
 
 export const defaultRemarkPlugins: Record<string, Pluggable> = {
-  gfm: [remarkGfm, {}],
+  gfm: [remarkGfm, { singleTilde: false }],
   codeMeta: remarkCodeMeta,
 } as const;
 
