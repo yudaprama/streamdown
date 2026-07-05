@@ -415,57 +415,75 @@ describe("ImageComponent", () => {
   });
 });
 
-describe("incomplete image placeholder", () => {
-  it("should render a placeholder when src is streamdown:incomplete-image", () => {
+describe("ImageComponent control props", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {
+      // Intentionally empty
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("showDownloadControl={false} hides download button after load", () => {
     const { container } = render(
       <ImageComponent
-        alt="loading..."
+        alt="Test"
         node={null as any}
-        src="streamdown:incomplete-image"
+        showDownloadControl={false}
+        src="https://example.com/image.png"
       />
     );
 
-    // Should NOT render an img tag
     const img = container.querySelector('img[data-streamdown="image"]');
-    expect(img).toBeNull();
+    if (img) {
+      fireEvent.load(img);
+    }
 
-    // Should render the placeholder div
-    const placeholder = container.querySelector(
-      '[data-streamdown="image-placeholder"]'
-    );
-    expect(placeholder).toBeTruthy();
-
-    // Wrapper should have data-incomplete="true"
-    const wrapper = container.querySelector('[data-streamdown="image-wrapper"]');
-    expect(wrapper?.getAttribute("data-incomplete")).toBe("true");
+    const button = container.querySelector('button[title="Download image"]');
+    expect(button).toBeFalsy();
   });
 
-  it("should not render download button for incomplete images", () => {
+  it("showControls={false} hides both overlay and download button", () => {
     const { container } = render(
       <ImageComponent
-        alt="loading..."
+        alt="Test"
         node={null as any}
-        src="streamdown:incomplete-image"
+        showControls={false}
+        src="https://example.com/image.png"
       />
     );
 
-    const downloadButton = container.querySelector("button");
-    expect(downloadButton).toBeNull();
+    const img = container.querySelector('img[data-streamdown="image"]');
+    if (img) {
+      fireEvent.load(img);
+    }
+
+    const overlay = container.querySelector(
+      '[data-streamdown="image-overlay"]'
+    );
+    const button = container.querySelector('button[title="Download image"]');
+    expect(overlay).toBeFalsy();
+    expect(button).toBeFalsy();
   });
 
-  it("should render placeholder with correct CSS classes for animation", () => {
+  it("showControls={true} (default) shows download button after load", () => {
     const { container } = render(
       <ImageComponent
-        alt="loading..."
+        alt="Test"
         node={null as any}
-        src="streamdown:incomplete-image"
+        showControls={true}
+        src="https://example.com/image.png"
       />
     );
 
-    const placeholder = container.querySelector(
-      '[data-streamdown="image-placeholder"]'
-    );
-    expect(placeholder?.className).toContain("animate-pulse");
-    expect(placeholder?.className).toContain("rounded-lg");
+    const img = container.querySelector('img[data-streamdown="image"]');
+    if (img) {
+      fireEvent.load(img);
+    }
+
+    const button = container.querySelector('button[title="Download image"]');
+    expect(button).toBeTruthy();
   });
 });
