@@ -50,7 +50,7 @@ const WHITESPACE_SPLIT_RE = /\s+/;
 const WORD_SPLIT_RE = /\s+|\S+/g;
 const CHAR_SPLIT_RE = /\s+|\S/g;
 
-const ATOMIC_TAGS = new Set(["pre", "img", "svg", "math", "video", "iframe"]);
+const ATOMIC_TAGS = new Set(["pre", "img", "hr", "svg", "math", "video", "iframe"]);
 const ATOMIC_CLASSES = new Set([
   "katex",
   "katex-display",
@@ -72,6 +72,28 @@ const elementClasses = (el: Element): string[] => {
 const isAtomic = (el: Element): boolean =>
   ATOMIC_TAGS.has(el.tagName) ||
   elementClasses(el).some((c) => ATOMIC_CLASSES.has(c));
+
+const LIST_CONTAINER_TAGS = new Set(["ul", "ol", "li"]);
+
+// Recurse into element children to find a checkbox (<input>), but never
+// cross into a nested list (which would grab a sub-item's checkbox).
+const findCheckbox = (element: Element): Element | undefined => {
+  for (const child of element.children) {
+    if (child.type === "element") {
+      if (child.tagName === "input") {
+        return child;
+      }
+      if (LIST_CONTAINER_TAGS.has(child.tagName)) {
+        continue;
+      }
+      const nested = findCheckbox(child);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return undefined;
+};
 
 const splitText = (text: string, sep: "word" | "char"): string[] =>
   text.match(sep === "char" ? CHAR_SPLIT_RE : WORD_SPLIT_RE) ?? [];
@@ -124,6 +146,8 @@ interface Ctx {
   counter: { value: number };
   /** Monotonic source of keys for nodes lacking source positions. */
   fallbackKey: { value: number };
+  /** Track nesting depth inside <a> elements for link whitespace merging. */
+  linkDepth: number;
   /** null => collect mode (no mutation), otherwise wrap mode. */
   plan: AnimationPlan | null;
   segments: SegmentInfo[];
@@ -279,6 +303,22 @@ const applyContainerCascade = (el: Element, agg: Aggregate, ctx: Ctx): void => {
   if (agg.hasActive) {
     el.properties = { ...el.properties, "data-sd-appear": true };
     appendStyle(el, `--sd-delay:${agg.minActiveDelay}ms`);
+    if (el.tagName === "li" && ctx.plan) {
+      el.properties["data-sd-animate-marker"] = true;
+      appendStyle(
+        el,
+        `--sd-marker-duration:${ctx.config.duration}ms;--sd-marker-easing:${ctx.config.easing}`
+      );
+      for (const c of el.children) {
+        if (c.type === "element") {
+          const input = findCheckbox(c);
+          if (input) {
+            input.properties["data-sd-animate"] = true;
+            appendStyle(input, animationStyle(agg.minActiveDelay, ctx.config));
+          }
+        }
+      }
+    }
     return;
   }
   if (agg.hasPending) {
@@ -301,7 +341,15 @@ const processChildren = (parent: Parent, ctx: Ctx): Aggregate => {
       if (isAtomic(child)) {
         fold(agg, processAtomic(child, ctx));
       } else {
+        // Track link depth so processText can merge whitespace inside <a>.
+        const wasLink = child.tagName === "a";
+        if (wasLink) {
+          ctx.linkDepth++;
+        }
         const childAgg = processChildren(child, ctx);
+        if (wasLink) {
+          ctx.linkDepth--;
+        }
         if (ctx.plan) {
           applyContainerCascade(child, childAgg, ctx);
         }
@@ -329,6 +377,7 @@ export const enumerateSegments = (
     counter: { value: baseOrdinal },
     segments: [],
     fallbackKey: { value: baseOrdinal },
+    linkDepth: 0,
   };
   processChildren(tree, ctx);
   return ctx.segments;
@@ -350,6 +399,7 @@ export const applyAnimation = (
     counter: { value: baseOrdinal },
     segments: [],
     fallbackKey: { value: baseOrdinal },
+    linkDepth: 0,
   };
   processChildren(tree, ctx);
 };

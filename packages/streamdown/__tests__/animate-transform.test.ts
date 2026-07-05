@@ -163,6 +163,96 @@ describe("enumerate / applyAnimation agreement", () => {
   });
 });
 
+describe("void element animation (hr)", () => {
+  it("annotates hr as atomic with data-sd-animate when active", () => {
+    const tree = parse("<hr>");
+    applyAnimation(tree, { settledEnd: 0, activeEnd: 1 });
+    const hr = findAll(tree, (el) => el.tagName === "hr")[0];
+    expect(hr.properties?.["data-sd-animate"]).toBe(true);
+    expect(delayOf(hr)).toBe(0);
+  });
+
+  it("hides an hr that is still pending", () => {
+    const tree = parse("<hr>");
+    applyAnimation(tree, { settledEnd: 0, activeEnd: 0 });
+    const hr = findAll(tree, (el) => el.tagName === "hr")[0];
+    expect(hr.properties?.["data-sd-hidden"]).toBe(true);
+  });
+
+  it("counts hr as a single atomic segment alongside text words", () => {
+    const segs = enumerateSegments(parse("<p>hello</p><hr><p>world</p>"));
+    expect(segs).toHaveLength(3);
+    expect(segs[0].atomic).toBe(false);
+    expect(segs[1].atomic).toBe(true);
+    expect(segs[2].atomic).toBe(false);
+  });
+});
+
+describe("list marker and checkbox", () => {
+  it("stamps marker animation vars on a list item with active content", () => {
+    const tree = parse("<ul><li>Hello world</li></ul>");
+    applyAnimation(tree, { settledEnd: 0, activeEnd: 2 });
+    const li = findAll(tree, (el) => el.tagName === "li")[0];
+    expect(li.properties?.["data-sd-animate-marker"]).toBe(true);
+    const style = String(li.properties?.style ?? "");
+    expect(style).toContain("--sd-marker-duration:150ms");
+    expect(style).toContain("--sd-marker-easing:ease");
+  });
+
+  it("does not stamp marker vars on settled list items", () => {
+    const tree = parse("<ul><li>Hello</li></ul>");
+    applyAnimation(tree, { settledEnd: 1, activeEnd: 1 });
+    const li = findAll(tree, (el) => el.tagName === "li")[0];
+    expect(li.properties?.["data-sd-animate-marker"]).toBeUndefined();
+  });
+
+  it("stamps animation on a task-list checkbox", () => {
+    const tree = parse(
+      '<ul><li class="task-list-item"><input type="checkbox" disabled=""> Hello</li></ul>'
+    );
+    applyAnimation(tree, { settledEnd: 0, activeEnd: 2 });
+    const input = findAll(tree, (el) => el.tagName === "input")[0];
+    expect(input.properties?.["data-sd-animate"]).toBe(true);
+    const style = String(input.properties?.style ?? "");
+    expect(style).toContain("--sd-animation:sd-fadeIn");
+    expect(style).toContain("--sd-duration:150ms");
+  });
+
+  it("does not stamp checkbox for items outside lists", () => {
+    const tree = parse('<p><input type="checkbox"> Hello</p>');
+    applyAnimation(tree, { settledEnd: 0, activeEnd: 1 });
+    const input = findAll(tree, (el) => el.tagName === "input")[0];
+    expect(input.properties?.["data-sd-animate"]).toBeUndefined();
+  });
+});
+
+describe("link whitespace merging", () => {
+  it("merges whitespace with the preceding word inside links", () => {
+    const tree = parse('<a href="/">Hello world</a>');
+    applyAnimation(tree, { settledEnd: 0, activeEnd: 2 });
+    const spans = findAll(tree, (el) => el.tagName === "span");
+    const wordSpans = spans.filter(
+      (s) => s.properties?.["data-sd-animate"] || s.properties?.["data-sd-shown"]
+    );
+    // Two visible words: "Hello " (whitespace merged), "world"
+    expect(wordSpans).toHaveLength(2);
+    expect(wordSpans[0]?.children[0]?.type === "text" ? wordSpans[0].children[0].value : "").toBe("Hello ");
+    expect(wordSpans[1]?.children[0]?.type === "text" ? wordSpans[1].children[0].value : "").toBe("world");
+  });
+
+  it("preserves whitespace between spans outside links", () => {
+    const tree = parse("<p>Hello world</p>");
+    applyAnimation(tree, { settledEnd: 0, activeEnd: 2 });
+    const spanTexts = findAll(tree, (el) => el.tagName === "span")
+      .filter((s) => {
+        const hasAttr = s.properties?.["data-sd-animate"] || s.properties?.["data-sd-shown"];
+        return hasAttr;
+      })
+      .map((s) => (s.children[0]?.type === "text" ? s.children[0].value : ""));
+    expect(spanTexts).toEqual(["Hello", " ", "world"]);
+  });
+});
+
 describe("stable animation keys", () => {
   const keyOf = (el: Element): string =>
     String(el.properties?.["data-sd-key"] ?? "");
