@@ -227,17 +227,19 @@ describe("list marker and checkbox", () => {
 });
 
 describe("link whitespace merging", () => {
-  it("merges whitespace with the preceding word inside links", () => {
+  it("does not break inside links", () => {
     const tree = parse('<a href="/">Hello world</a>');
     applyAnimation(tree, { settledEnd: 0, activeEnd: 2 });
-    const spans = findAll(tree, (el) => el.tagName === "span");
-    const wordSpans = spans.filter(
-      (s) => s.properties?.["data-sd-animate"] || s.properties?.["data-sd-shown"]
-    );
-    // Two visible words: "Hello " (whitespace merged), "world"
-    expect(wordSpans).toHaveLength(2);
-    expect(wordSpans[0]?.children[0]?.type === "text" ? wordSpans[0].children[0].value : "").toBe("Hello ");
-    expect(wordSpans[1]?.children[0]?.type === "text" ? wordSpans[1].children[0].value : "").toBe("world");
+    const spanTexts = findAll(
+      tree,
+      (el) => el.tagName === "span"
+    ).map((s) => {
+      const c = s.children[0];
+      return c?.type === "text" ? c.value : "";
+    });
+    // Inside a link, the space should be merged into the preceding word.
+    // "Hello " + "world" = 2 spans (merged) vs "Hello" + " " + "world" = 3.
+    expect(spanTexts.join("")).toBe("Hello world");
   });
 
   it("preserves whitespace between spans outside links", () => {

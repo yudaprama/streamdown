@@ -311,7 +311,7 @@ const applyContainerCascade = (el: Element, agg: Aggregate, ctx: Ctx): void => {
       );
       for (const c of el.children) {
         if (c.type === "element") {
-          const input = findCheckbox(c);
+          const input = c.tagName === "input" ? c : findCheckbox(c);
           if (input) {
             input.properties["data-sd-animate"] = true;
             appendStyle(input, animationStyle(agg.minActiveDelay, ctx.config));

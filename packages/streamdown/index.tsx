@@ -608,39 +608,6 @@ export const Streamdown = memo(
     // Previously initialized as [] which caused content to flicker on hydration
     const [displayBlocks, setDisplayBlocks] = useState<string[]>(blocks);
 
-    // Use transition for block updates in streaming mode to avoid blocking UI
-    // biome-ignore lint/correctness/useExhaustiveDependencies: animatePlugin checked but not a dep
-    useEffect(() => {
-      if (mode === "streaming" && !animatePlugin) {
-        startTransition(() => {
-          setDisplayBlocks(blocks);
-        });
-      } else {
-        setDisplayBlocks(blocks);
-      }
-    }, [blocks, mode]);
-
-    // Use displayBlocks for rendering to leverage useTransition
-    const blocksToRender = mode === "streaming" ? displayBlocks : blocks;
-
-    // Pre-compute per-block text directions when dir="auto" so detection
-    // runs once per block change rather than on every render pass.
-    const blockDirections = useMemo(
-      () =>
-        dir === "auto" ? blocksToRender.map(detectTextDirection) : undefined,
-      [blocksToRender, dir]
-    );
-
-    // Stable keys by index. Animation segments carry their own stable keys
-    // (data-sd-key), so reconciliation survives mid-stream markdown morphs
-    // without remounting — the block memo re-renders on animation.plan changes,
-    // which keep advancing as the post-stream backlog drains.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: "we're using the blocksToRender length"
-    const blockKeys = useMemo(
-      () => blocksToRender.map((_block, idx) => `${generatedId}-${idx}`),
-      [blocksToRender.length, generatedId]
-    );
-
     // Stable key derived from animated option values. This prevents the
     // plugin from being recreated when the user passes an inline object
     // literal (e.g. animated={{ animation: 'fadeIn' }}) whose reference
