@@ -869,7 +869,6 @@ export const Streamdown = memo(
     prevProps.plugins === nextProps.plugins &&
     prevProps.className === nextProps.className &&
     prevProps.linkSafety === nextProps.linkSafety &&
-    prevProps.mermaid === nextProps.mermaid &&
     prevProps.lineNumbers === nextProps.lineNumbers &&
     prevProps.normalizeHtmlIndentation === nextProps.normalizeHtmlIndentation &&
     prevProps.literalTagContent === nextProps.literalTagContent &&
