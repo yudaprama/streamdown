@@ -223,6 +223,22 @@ const processText = (
     const key = `${base}+${consumedChars}`;
     consumedChars += unit.length;
     if (WHITESPACE_ONLY_RE.test(unit)) {
+      // Inside a link in word mode, merge whitespace into the preceding
+      // word span so underlines render continuously instead of breaking.
+      if (
+        ctx.linkDepth > 0 &&
+        ctx.config.sep === "word" &&
+        replacement.length > 0
+      ) {
+        const last = replacement[replacement.length - 1];
+        if (last.type === "element") {
+          const textChild = last.children[0];
+          if (textChild?.type === "text") {
+            textChild.value += unit;
+            continue;
+          }
+        }
+      }
       // Wrap whitespace in a span too, so every child of the parent is a keyed
       // element. Mixing keyed spans with unkeyed text nodes makes React's
       // reconciliation drop/strand nodes as the split changes each render.

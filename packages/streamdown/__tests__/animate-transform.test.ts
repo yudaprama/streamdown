@@ -227,7 +227,7 @@ describe("list marker and checkbox", () => {
 });
 
 describe("link whitespace merging", () => {
-  it("does not break inside links", () => {
+  it("merges trailing whitespace with the preceding word inside links", () => {
     const tree = parse('<a href="/">Hello world</a>');
     applyAnimation(tree, { settledEnd: 0, activeEnd: 2 });
     const spanTexts = findAll(
@@ -237,9 +237,10 @@ describe("link whitespace merging", () => {
       const c = s.children[0];
       return c?.type === "text" ? c.value : "";
     });
-    // Inside a link, the space should be merged into the preceding word.
-    // "Hello " + "world" = 2 spans (merged) vs "Hello" + " " + "world" = 3.
-    expect(spanTexts.join("")).toBe("Hello world");
+    // Inside a link, whitespace merges into preceding word: "Hello " + "world"
+    expect(spanTexts.length).toBe(2);
+    expect(spanTexts[0]).toBe("Hello ");
+    expect(spanTexts[1]).toBe("world");
   });
 
   it("preserves whitespace between spans outside links", () => {
