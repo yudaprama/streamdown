@@ -109,7 +109,7 @@ export const MermaidFullscreenButton = ({
 
       {isFullscreen
         ? createPortal(
-            // biome-ignore lint/a11y/noNoninteractiveElementInteractions: "div is used as a backdrop overlay, not a button"
+            // biome-ignore lint/a11y/noNoninteractiveElementInteractions: "dialog overlay needs click-to-dismiss"
             <div
               aria-label={t.viewFullscreen}
               aria-modal="true"
