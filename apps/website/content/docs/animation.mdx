@@ -8,7 +8,7 @@ related:
   - /docs/memoization
 ---
 
-Streamdown supports per-word streaming animation through the built-in `animated` prop. Words fade in as they mount, creating a smooth text-reveal effect during AI streaming. When streaming ends, the animation is removed entirely, leaving zero DOM overhead on completed messages.
+Streamdown supports per-word streaming animation through the built-in `animated` prop. As content streams in, words are revealed in staggered chunks, creating a smooth text-reveal effect. A stateful controller drives the reveal, so the animation keeps pace with the stream and finishes draining any backlog even after the stream ends.
 
 ## Enabling animation
 
@@ -27,18 +27,23 @@ export default function Page() {
 }
 ```
 
-The `isAnimating` prop controls when the animation is active. When `false`, the animate plugin is excluded from the rehype pipeline entirely, so completed messages render as plain text with no extra `<span>` wrappers.
+The `isAnimating` prop tells the controller a stream is in progress. While `true`, new content is revealed in staggered chunks. When it flips to `false`, the controller keeps draining whatever is still mid-reveal until everything is shown. Content that was never streamed (for example, historical messages mounted with `isAnimating` never `true`) is shown immediately with no animation.
 
 ## How it works
 
-The animation is a rehype transformer that:
+When `animated` is set, a rehype transformer splits each text node into per-segment `<span>` elements (words by default, see [`sep`](#options)) and assigns every segment a position in a global, document-ordered sequence. A controller tracks two frontiers over that sequence and classifies each segment into one of three zones:
 
-1. Walks the HAST tree, visiting text nodes
-2. Splits each text node into per-word `<span>` elements with `data-sd-animate`
-3. Sets CSS custom properties for animation name, duration, and easing
-4. Skips text inside `code`, `pre`, `svg`, `math`, and `annotation` elements
+| Zone | Attribute | Behavior |
+|------|-----------|----------|
+| Settled | `data-sd-shown` | Already revealed and visible. |
+| Active | `data-sd-animate` | The chunk currently animating in, with a staggered `--sd-delay`. |
+| Pending | `data-sd-hidden` | Rendered but `display: none` until its turn. |
 
-React's reconciliation ensures only newly-mounted spans trigger the CSS animation. Combined with a short default duration (150ms), this makes batch token arrivals look smooth rather than "chunky."
+Container elements (list items, paragraphs) get a matching cascade so a parent with only pending children also collapses (`data-sd-appear` / `data-sd-hidden`).
+
+Each segment span also carries a stable `data-sd-key` (derived from its source offset). Streamdown promotes that key to the React key and strips the attribute before it reaches the DOM. Because the key is stable across re-parses, already-shown words reconcile in place instead of remounting or re-running their animation when the surrounding markdown grows mid-stream.
+
+Atomic elements — code blocks (`pre`), images, math/KaTeX, `svg`, `video`, and `iframe` — are revealed as a single unit rather than split into word spans, so their internal layout is never broken.
 
 ## Animation types
 
@@ -107,6 +112,19 @@ export default function Page() {
 | `duration` | `number` | `150` | Animation duration in milliseconds. |
 | `easing` | `string` | `"ease"` | CSS timing function. |
 | `sep` | `"word" \| "char"` | `"word"` | Split text by word or character. |
+| `reserveSpace` | `boolean` | `false` | Reserve layout space for unrevealed content instead of collapsing it. See [Layout: grow vs. reserve](#layout-grow-vs-reserve). |
+
+### Layout: grow vs. reserve
+
+By default, unrevealed content is collapsed with `display: none` and grows in as it reveals — the smoothest reveal, at the cost of layout shifting as content appears. Set `reserveSpace: true` to instead reserve the final layout up front and fade each segment's opacity in place, so the layout never shifts:
+
+```tsx
+<Streamdown animated={{ reserveSpace: true }} isAnimating={status === "streaming"}>
+  {markdown}
+</Streamdown>
+```
+
+Use the default for the most polished reveal, or `reserveSpace` when stable layout matters more (for example, to avoid scroll jank during streaming).
 
 ### Character-level animation
 
@@ -122,15 +140,22 @@ This creates a typewriter-like effect but generates more DOM nodes. Use it spari
 
 ## Custom animations
 
-Define your own `@keyframes` and reference them by name:
+Define your own `@keyframes` and reference them by name. Flip `display` on at `1%` so the segment stays collapsed through its staggered (`backwards`-filled) delay and reserves no layout space until it animates in:
 
 ```css title="app/globals.css"
 @keyframes sd-myCustomAnimation {
-  from {
+  0% {
+    display: none;
     opacity: 0;
     transform: scale(0.95);
   }
-  to {
+  1% {
+    display: revert;
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    display: revert;
     opacity: 1;
     transform: scale(1);
   }
@@ -193,17 +218,17 @@ const animate = createAnimatePlugin({
 // animate.rehypePlugin is a standard rehype plugin
 ```
 
-## Skipped elements
+## Atomic elements
 
-The animation skips text inside these elements to avoid breaking their layout:
+These elements are revealed as a single unit instead of being split into per-word spans, so their internal layout is never broken:
 
-- `<code>` — inline and block code
-- `<pre>` — preformatted text
-- `<svg>` — vector graphics
-- `<math>` — MathML elements
-- `<annotation>` — MathML annotations
+- `<pre>` — code blocks and syntax-highlighted code
+- `<img>` — images
+- `<svg>` — vector graphics and diagrams
+- `<math>` (and `.katex` / `.math` containers) — math equations
+- `<video>` and `<iframe>` — embedded media
 
-This means code blocks, syntax-highlighted code, math equations, and diagrams render without animation spans.
+Each animates in as a whole when its turn in the sequence arrives. Inline content (including inline `code`) is split and revealed word by word like the surrounding text.
 
 ## Fast-streaming models
 
@@ -230,25 +255,35 @@ For smoother results with fast models:
 
 ## CSS custom properties
 
-Each animated span receives these CSS custom properties via inline styles:
+Each active span receives these CSS custom properties via inline styles:
 
 | Property | Description |
 |----------|-------------|
 | `--sd-animation` | The `@keyframes` name to use |
 | `--sd-duration` | Animation duration |
 | `--sd-easing` | CSS timing function |
+| `--sd-delay` | Per-segment stagger delay |
 
-The `[data-sd-animate]` selector in `styles.css` reads these properties:
+`styles.css` defines the selectors for each zone:
 
 ```css
 [data-sd-animate] {
-  animation: var(--sd-animation, sd-fadeIn)
-    var(--sd-duration, 150ms)
-    var(--sd-easing, ease) both;
+  animation: var(--sd-animation, sd-fadeIn) var(--sd-duration, 150ms)
+    var(--sd-easing, ease) var(--sd-delay, 0ms) backwards;
+}
+
+/* Containers reveal (display only) once their first child does. */
+[data-sd-appear] {
+  animation: sd-appear 1ms step-end var(--sd-delay, 0ms) backwards;
+}
+
+/* Pending segments occupy no layout until their turn. */
+[data-sd-hidden] {
+  display: none;
 }
 ```
 
-You can override these in your own CSS for more control.
+The built-in keyframes flip `display` on at the start of the animation (the `0%`/`1%` split) so a segment stays collapsed through its `backwards`-filled delay window, then animates in. Settled segments carry `data-sd-shown` and have no animation. You can override any of these in your own CSS for more control.
 
 ## Related features
 

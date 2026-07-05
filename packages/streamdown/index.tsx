@@ -21,8 +21,10 @@ import type { Pluggable } from "unified";
 import {
   type AnimateOptions,
   type AnimatePlugin,
-  createAnimatePlugin,
-} from "./lib/animate";
+  createAnimatePluginFromConfig,
+  resolveAnimateConfig,
+} from "./lib/animate/plugin";
+import { type BlockAnimation, useAnimation } from "./lib/animate/use-animation";
 import { BlockIncompleteContext } from "./lib/block-incomplete-context";
 import { components as defaultComponents } from "./lib/components";
 import { detectTextDirection } from "./lib/detect-direction";
@@ -53,9 +55,9 @@ export type {
   BundledTheme,
   ThemeRegistrationAny,
 } from "shiki";
-export type { AnimateOptions } from "./lib/animate";
+export type { AnimateOptions } from "./lib/animate/plugin";
 // biome-ignore lint/performance/noBarrelFile: "required"
-export { createAnimatePlugin } from "./lib/animate";
+export { createAnimatePlugin } from "./lib/animate/plugin";
 export { useIsCodeFenceIncomplete } from "./lib/block-incomplete-context";
 export { CodeBlock } from "./lib/code-block";
 export { CodeBlockContainer } from "./lib/code-block/container";
@@ -330,8 +332,10 @@ export type BlockProps = Options & {
   isIncomplete: boolean;
   /** Resolved text direction for this block */
   dir?: "ltr" | "rtl";
-  /** Animate plugin instance for tracking previous content length */
+  /** Shared animate plugin; the block writes its state before it renders. */
   animatePlugin?: AnimatePlugin | null;
+  /** This block's base ordinal and effective animation plan. */
+  animation?: BlockAnimation;
 };
 
 export const Block = memo(
@@ -343,20 +347,17 @@ export const Block = memo(
     index: __,
     isIncomplete,
     dir,
-    animatePlugin: animatePluginProp,
+    animatePlugin,
+    animation,
     ...props
   }: BlockProps) => {
-    // Tell the animate plugin how many HAST characters were already rendered
-    // so it can skip their animation (duration=0ms) on this render pass.
-    //
-    // getLastRenderCharCount() returns the char count from the PREVIOUS
-    // rehype run then resets to 0. React renders depth-first: this Block's
-    // body runs, then its child Markdown calls processor.runSync (which
-    // runs rehypeAnimate synchronously). So the value here is from the
-    // previous render — exactly what we need as prevContentLength.
-    if (animatePluginProp) {
-      const prevCount = animatePluginProp.getLastRenderCharCount();
-      animatePluginProp.setPrevContentLength(prevCount);
+    // Write this block's animation state into the shared plugin before its
+    // Markdown renders. React renders depth-first and Markdown's `runSync` is
+    // synchronous, so this write and the plugin's read happen within one
+    // synchronous Block body — nothing interleaves and the plugin sees exactly
+    // this block's state. See the matching note in lib/animate/plugin.ts.
+    if (animatePlugin && animation) {
+      animatePlugin.setBlockState(animation.baseOrdinal, animation.plan);
     }
 
     // Note: remend is already applied to the entire markdown before parsing into blocks
@@ -428,6 +429,19 @@ export const Block = memo(
 
     // Check if remarkPlugins changed (reference comparison)
     if (prevProps.remarkPlugins !== nextProps.remarkPlugins) {
+      return false;
+    }
+
+    // Re-render when this block's animation frontier moves. Settled blocks get
+    // a frozen plan (equal numbers), so they skip re-render; only the animating
+    // tail changes.
+    if (
+      prevProps.animation?.baseOrdinal !== nextProps.animation?.baseOrdinal ||
+      prevProps.animation?.plan.settledEnd !==
+        nextProps.animation?.plan.settledEnd ||
+      prevProps.animation?.plan.activeEnd !==
+        nextProps.animation?.plan.activeEnd
+    ) {
       return false;
     }
 
@@ -554,6 +568,43 @@ export const Streamdown = memo(
       [processedChildren, parseMarkdownIntoBlocksFn]
     );
 
+    // Initialize displayBlocks with blocks to avoid hydration mismatch
+    // Previously initialized as [] which caused content to flicker on hydration
+    const [displayBlocks, setDisplayBlocks] = useState<string[]>(blocks);
+
+    // Use transition for block updates in streaming mode to avoid blocking UI
+    // biome-ignore lint/correctness/useExhaustiveDependencies: animatePlugin checked but not a dep
+    useEffect(() => {
+      if (mode === "streaming" && !animatePlugin) {
+        startTransition(() => {
+          setDisplayBlocks(blocks);
+        });
+      } else {
+        setDisplayBlocks(blocks);
+      }
+    }, [blocks, mode]);
+
+    // Use displayBlocks for rendering to leverage useTransition
+    const blocksToRender = mode === "streaming" ? displayBlocks : blocks;
+
+    // Pre-compute per-block text directions when dir="auto" so detection
+    // runs once per block change rather than on every render pass.
+    const blockDirections = useMemo(
+      () =>
+        dir === "auto" ? blocksToRender.map(detectTextDirection) : undefined,
+      [blocksToRender, dir]
+    );
+
+    // Stable keys by index. Animation segments carry their own stable keys
+    // (data-sd-key), so reconciliation survives mid-stream markdown morphs
+    // without remounting — the block memo re-renders on animation.plan changes,
+    // which keep advancing as the post-stream backlog drains.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: "we're using the blocksToRender length"
+    const blockKeys = useMemo(
+      () => blocksToRender.map((_block, idx) => `${generatedId}-${idx}`),
+      [blocksToRender.length, generatedId]
+    );
+
     // Stable key derived from animated option values. This prevents the
     // plugin from being recreated when the user passes an inline object
     // literal (e.g. animated={{ animation: 'fadeIn' }}) whose reference
@@ -568,16 +619,17 @@ export const Streamdown = memo(
       return "";
     }, [animated]);
 
-    // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by animatedKey for value equality
-    const animatePlugin = useMemo(() => {
-      if (!animatedKey) {
-        return null;
-      }
-      if (animatedKey === "true") {
-        return createAnimatePlugin();
-      }
-      return createAnimatePlugin(animated as AnimateOptions);
-    }, [animatedKey]);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: `animated` is intentionally excluded — keyed by animatedKey for value equality so inline-object props don't recreate the config
+    const animateConfig = useMemo(
+      () => (animatedKey ? resolveAnimateConfig(animated) : null),
+      [animatedKey]
+    );
+
+    const animatePlugin = useMemo(
+      () =>
+        animateConfig ? createAnimatePluginFromConfig(animateConfig) : null,
+      [animateConfig]
+    );
 
     // Defer the blocks reference during streaming so React can drop intermediate
     // values under load. Replaces the previous useState+useEffect+startTransition
@@ -687,7 +739,7 @@ export const Streamdown = memo(
       return result;
     }, [remarkPlugins, plugins?.math, plugins?.cjk]);
 
-    const mergedRehypePlugins = useMemo(() => {
+    const baseRehypePlugins = useMemo(() => {
       let result = rehypePlugins;
 
       // extend sanitization schema with allowedTags. only works with default plugins. if user provides a custom sanitize plugin, they can pass in the custom allowed tags via the plugins object.
@@ -723,19 +775,32 @@ export const Streamdown = memo(
         result = [...result, plugins.math.rehypePlugin];
       }
 
-      if (animatePlugin && isAnimating) {
-        result = [...result, animatePlugin.rehypePlugin];
-      }
-
       return result;
-    }, [
-      rehypePlugins,
-      plugins?.math,
-      animatePlugin,
+    }, [rehypePlugins, plugins?.math, allowedTags, literalTagContent]);
+
+    const countingOptions = useMemo(
+      () => ({
+        components: mergedComponents,
+        remarkPlugins: mergedRemarkPlugins,
+        rehypePlugins: baseRehypePlugins,
+      }),
+      [mergedComponents, mergedRemarkPlugins, baseRehypePlugins]
+    );
+
+    const blockAnimations = useAnimation({
+      blocks: blocksToRender,
+      config: animateConfig,
       isAnimating,
-      allowedTags,
-      literalTagContent,
-    ]);
+      countingOptions,
+    });
+
+    const mergedRehypePlugins = useMemo(
+      () =>
+        animatePlugin
+          ? [...baseRehypePlugins, animatePlugin.rehypePlugin]
+          : baseRehypePlugins,
+      [baseRehypePlugins, animatePlugin]
+    );
 
     const shouldHideCaret = useMemo(() => {
       if (!isAnimating || blocksToRender.length === 0) {
@@ -745,15 +810,22 @@ export const Streamdown = memo(
       return hasIncompleteCodeFence(lastBlock) || hasTable(lastBlock);
     }, [isAnimating, blocksToRender]);
 
-    const style = useMemo(
-      () =>
-        caret && isAnimating && !shouldHideCaret
-          ? ({
-              "--streamdown-caret": `"${carets[caret]}"`,
-            } as CSSProperties)
-          : undefined,
-      [caret, isAnimating, shouldHideCaret]
-    );
+    const style = useMemo(() => {
+      const showCaret = caret && isAnimating && !shouldHideCaret;
+      if (!(showCaret || animateConfig?.reserveSpace)) {
+        return;
+      }
+      const vars: Record<string, string> = {};
+      if (showCaret) {
+        vars["--streamdown-caret"] = `"${carets[caret]}"`;
+      }
+      // Reserve-space mode: keep unrevealed segments in layout (opacity-only)
+      // by overriding the display they collapse to. See styles.css.
+      if (animateConfig?.reserveSpace) {
+        vars["--sd-hidden-display"] = "revert";
+      }
+      return vars as CSSProperties;
+    }, [caret, isAnimating, shouldHideCaret, animateConfig]);
 
     // Static mode: simple rendering without streaming features
     if (mode === "static") {
@@ -861,6 +933,7 @@ export const Streamdown = memo(
                     return (
                       <BlockComponent
                         animatePlugin={animatePlugin}
+                        animation={blockAnimations[index]}
                         components={mergedComponents}
                         content={block}
                         dir={
