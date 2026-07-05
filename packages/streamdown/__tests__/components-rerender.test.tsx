@@ -422,6 +422,39 @@ describe("sameNodePosition edge cases", () => {
 
     expect(container.querySelector("ol")).toBeTruthy();
   });
+
+  it("should re-render when only offset changes", () => {
+    const nodeV1 = {
+      position: {
+        start: { line: 1, column: 1, offset: 0 },
+        end: { line: 2, column: 5, offset: 20 },
+      },
+    };
+    const nodeV2 = {
+      position: {
+        start: { line: 1, column: 1, offset: 0 },
+        end: { line: 2, column: 5, offset: 35 },
+      },
+    };
+
+    const { container, rerender } = render(
+      <ReRenderWrapper count={0}>
+        <Ol node={nodeV1 as any}>
+          <li>item</li>
+        </Ol>
+      </ReRenderWrapper>
+    );
+
+    rerender(
+      <ReRenderWrapper count={1}>
+        <Ol node={nodeV2 as any}>
+          <li>item</li>
+        </Ol>
+      </ReRenderWrapper>
+    );
+
+    expect(container.querySelector("ol")).toBeTruthy();
+  });
 });
 
 describe("MemoParagraph block code unwrapping with data-block", () => {
