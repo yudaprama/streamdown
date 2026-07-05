@@ -47,6 +47,16 @@ export const serializeSvgForDownload = (svgString: string): string => {
 };
 
 /**
+ * Ensure SVG string has required XML namespaces for canvas rendering
+ */
+function normalizeSvg(svg: string): string {
+  if (svg.includes("xlink:href") && !svg.includes("xmlns:xlink")) {
+    return svg.replace("<svg", '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+  }
+  return svg;
+}
+
+/**
  * Convert SVG string to PNG blob for export
  */
 export const svgToPngBlob = (
@@ -56,14 +66,11 @@ export const svgToPngBlob = (
   const scale = options?.scale ?? 5;
 
   return new Promise((resolve, reject) => {
-    // Ensure the SVG is valid XML before encoding it as a data URI. Mermaid
-    // can emit xlink-prefixed attributes without declaring xmlns:xlink on the
-    // root element, which makes the SVG invalid XML and prevents browsers from
-    // loading it as an image (causing silent PNG export failures).
-    const normalizedSvg = addXlinkNamespaceIfMissing(svgString);
+    const normalized = normalizeSvg(svgString);
+
     const encoded =
       "data:image/svg+xml;base64," +
-      btoa(unescape(encodeURIComponent(normalizedSvg)));
+      btoa(unescape(encodeURIComponent(normalized)));
 
     const img = new Image();
     img.crossOrigin = "anonymous";
