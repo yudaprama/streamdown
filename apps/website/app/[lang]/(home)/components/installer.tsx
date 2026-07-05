@@ -12,33 +12,37 @@ import {
   InputGroupText,
 } from "@/components/ui/input-group";
 
-const CODE = "npm i streamdown";
-const TIMEOUT = 2000;
+const COPY_TIMEOUT = 2000;
 
-export const Installer = () => {
+interface InstallerProps {
+  className?: string;
+  command: string;
+}
+
+export const Installer = ({ command, className = "w-48" }: InstallerProps) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(CODE);
+    navigator.clipboard.writeText(command);
     toast.success("Copied to clipboard");
     setCopied(true);
 
     track("Copied installer command");
     setTimeout(() => {
       setCopied(false);
-    }, TIMEOUT);
+    }, COPY_TIMEOUT);
   };
 
   const Icon = copied ? CheckIcon : CopyIcon;
 
   return (
-    <InputGroup className="font-mono shadow-none">
+    <InputGroup className="h-10 bg-background font-mono shadow-none">
       <InputGroupAddon>
         <InputGroupText className="font-normal text-muted-foreground">
           $
         </InputGroupText>
       </InputGroupAddon>
-      <InputGroupInput readOnly value={CODE} />
+      <InputGroupInput className={className} readOnly value={command} />
       <InputGroupAddon align="inline-end">
         <InputGroupButton
           aria-label="Copy"
