@@ -1,0 +1,19 @@
+packages/streamdown/index.tsx
+  s_798393252e85db::t_0573eed9cf4b0b 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "54e051fc3c5961ad8cf68550871cdfa7e81191fe",
+  "prompts": {},
+  "sessions": {
+    "s_798393252e85db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4181b116-2412-4711-93eb-06f3acc1cab2",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "yudaprama <yudhaprama@icloud.com>"
+    }
+  }
+}
