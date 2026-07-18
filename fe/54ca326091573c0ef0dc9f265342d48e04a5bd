@@ -1,0 +1,21 @@
+packages/streamdown/tsconfig.json
+  s_cb63b04cd2467b::t_5292b86072834e 3
+packages/remend/tsconfig.json
+  s_cb63b04cd2467b::t_bf7483f7910b23 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "fe54ca326091573c0ef0dc9f265342d48e04a5bd",
+  "prompts": {},
+  "sessions": {
+    "s_cb63b04cd2467b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7406bc4-b7d2-41d2-bfc8-a04dcd12a155",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "yudaprama <yudhaprama@icloud.com>"
+    }
+  }
+}
